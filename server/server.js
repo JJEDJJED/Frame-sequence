@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { exec } from "node:child_process";
 import { createWorkspace, httpError, TYPE_BY_EXT } from "./projects.js";
 import { pickFolder, pickProjectFile, reveal } from "./dialogs.js";
+import { TrackingService } from "./tracking.js";
+import { RtmService } from "./rtm.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = path.join(ROOT, "web");
@@ -27,6 +29,14 @@ const MAX_ASSET = 64 * 1024 * 1024;
 // GUANGTAI_HOME moves data/ and projects/ elsewhere (used to run throwaway test
 // instances that can never touch real projects)
 const ws = createWorkspace(process.env.GUANGTAI_HOME ? path.resolve(process.env.GUANGTAI_HOME) : ROOT);
+const tracking = new TrackingService(ws);
+const rtm = new RtmService(ws);
+process.once("exit", () => { tracking.close(); rtm.close(); });
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
+  tracking.close();
+  rtm.close();
+  server.close(() => process.exit(0));
+});
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -92,6 +102,27 @@ async function api(req, res, url) {
   if (method !== "GET" && method !== "HEAD") guardMutation(req);
 
   const body = () => readJson(req).then((b) => b || {});
+
+  if (parts[1] === "tracking" && parts[2] === "status" && parts.length === 3 && method === "GET") {
+    return sendJson(res, 200, await tracking.status());
+  }
+
+  if (parts[1] === "rtm" && parts[2] === "status" && parts.length === 3 && method === "GET") {
+    return sendJson(res, 200, await rtm.status());
+  }
+  if (parts[1] === "projects" && parts[3] === "rtm") {
+    if (parts.length === 4 && method === "POST") return sendJson(res, 202, await rtm.start(parts[2], await body()));
+    if (parts.length === 5 && method === "GET") return sendJson(res, 200, rtm.get(parts[2], parts[4]));
+    if (parts.length === 5 && method === "DELETE") return sendJson(res, 200, rtm.cancel(parts[2], parts[4]));
+  }
+
+  if (parts[1] === "projects" && parts[3] === "tracking") {
+    if (parts.length === 4 && method === "POST") {
+      return sendJson(res, 202, await tracking.start(parts[2], await body()));
+    }
+    if (parts.length === 5 && method === "GET") return sendJson(res, 200, tracking.get(parts[2], parts[4]));
+    if (parts.length === 5 && method === "DELETE") return sendJson(res, 200, tracking.cancel(parts[2], parts[4]));
+  }
 
   if (parts[1] === "settings" && parts.length === 2) {
     if (method === "GET") return sendJson(res, 200, await ws.getSettings());
@@ -215,12 +246,31 @@ function openBrowser() {
   exec(cmd, () => {});
 }
 
-server.on("error", (err) => {
+server.on("error", async (err) => {
   if (err.code === "EADDRINUSE") {
-    // most likely the studio is already running — just bring it up
+    // Static files can be current while an already-running Node process still
+    // has old routes in memory. Do not silently reopen an incompatible server.
+    let compatible = false;
+    try {
+      compatible = true;
+      for (const endpoint of ["api/tracking/status", "api/rtm/status"]) {
+        const response = await fetch(appUrl + endpoint, { signal: AbortSignal.timeout(5000) });
+        const status = await response.json();
+        if (!response.ok || !(typeof status?.ready === "boolean" || status?.busy === true)) { compatible = false; break; }
+      }
+    } catch { /* occupied by another service, or the existing instance is unresponsive */ }
+    if (!compatible) {
+      console.error(`端口 ${PORT} 已有服务，但不支持当前跟踪 / RTM 接口或未能正常响应。`);
+      console.error("请先关闭原启动窗口以重启旧版服务，再重新运行 start.bat，然后刷新页面。");
+      process.exitCode = 1;
+      return;
+    }
     console.log(`端口 ${PORT} 已被占用，工作室可能已在运行：${appUrl}`);
     if (process.argv.includes("--open")) openBrowser();
-    process.exit(0);
+    // Let pending HTTP cleanup finish; forced exit during multiple fetches can
+    // abort libuv's closing async handle on Windows.
+    process.exitCode = 0;
+    return;
   }
   throw err;
 });

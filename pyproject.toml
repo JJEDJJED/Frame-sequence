@@ -1,0 +1,38 @@
+[project]
+name = "guangtai-tracking"
+version = "0.1.0"
+description = "Local TAPNext++ and RTMPose workers for Frame-sequence"
+requires-python = ">=3.12,<3.13"
+dependencies = ["numpy>=2,<3", "pillow>=11,<13"]
+
+[project.optional-dependencies]
+model = ["torch>=2.6,<3", "torchvision>=0.21,<1", "einops>=0.8,<1"]
+rtm = ["onnxruntime>=1.20,<2", "opencv-python-headless>=4.10,<5"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[tool.uv]
+package = false
+cache-dir = ".uv-cache"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+pythonpath = ["python"]
+addopts = "-ra --basetemp=.pytest_cache/tmp"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

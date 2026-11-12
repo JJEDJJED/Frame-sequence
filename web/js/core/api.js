@@ -23,6 +23,10 @@ async function request(method, url, body, opts = {}) {
     throw new Error("连不上本地服务，请确认 start.bat 的窗口还开着");
   }
   const data = await res.json().catch(() => null);
+  const trackingRoute = /^\/api\/(?:tracking|rtm)\//.test(url) || /^\/api\/projects\/[^/]+\/(?:tracking|rtm)(?:\/|$)/.test(url);
+  if (res.status === 404 && data?.error === "接口不存在" && trackingRoute) {
+    throw new Error("本地服务仍是旧版本，缺少跟踪或 RTM 定位接口。请重启服务：关闭原启动窗口，重新运行 start.bat，然后刷新页面。");
+  }
   if (!res.ok) throw new Error((data && data.error) || "请求失败（" + res.status + "）");
   return data;
 }
@@ -31,6 +35,14 @@ const enc = encodeURIComponent;
 const P = (id) => "/api/projects/" + enc(id);
 
 export const api = {
+  rtmStatus: () => request("GET", "/api/rtm/status"),
+  startRtm: (id, body) => request("POST", P(id) + "/rtm", body),
+  rtmJob: (id, jobId) => request("GET", P(id) + "/rtm/" + enc(jobId)),
+  cancelRtm: (id, jobId) => request("DELETE", P(id) + "/rtm/" + enc(jobId)),
+  trackingStatus: () => request("GET", "/api/tracking/status"),
+  startTracking: (id, body) => request("POST", P(id) + "/tracking", body),
+  trackingJob: (id, jobId) => request("GET", P(id) + "/tracking/" + enc(jobId)),
+  cancelTracking: (id, jobId) => request("DELETE", P(id) + "/tracking/" + enc(jobId)),
   listProjects: () => request("GET", "/api/projects"),
   createProject: (name, parent) => request("POST", "/api/projects", { name, parent }),
   openProject: (path) => request("POST", "/api/projects/open", { path }),

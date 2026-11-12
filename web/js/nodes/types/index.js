@@ -8,6 +8,8 @@ import "./pixelize.js";
 import "./slice.js";
 import "./reframe.js";
 import "./align.js";
+import "./keypointAlign.js";
+import "./rtmCenter.js";
 import "./interpolate.js";
 import "./recolor.js";
 import "./preview.js";

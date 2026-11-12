@@ -7,3 +7,13 @@ node_modules/
 *.log
 Thumbs.db
 .DS_Store
+
+# uv-managed Python environment, caches and downloaded model files
+.venv/
+.uv-cache/
+.uv-python/
+.models/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
